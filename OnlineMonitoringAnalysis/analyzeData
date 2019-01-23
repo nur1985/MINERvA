@@ -1,0 +1,115 @@
+#!/bin/sh
+#################################################################
+# A shell script to analysis submit jobs to create DSTs for 
+# underground main detector. This is a temporary fix 
+# Nuruzzaman <nur@fnal.gov>, Date Created: 04/22/2016
+# 
+# Please change the about function if you are changing the script.
+# Also update the version number.
+#################################################################
+MINERvA_VNC_SHIFT_SOFTWARE="v1.0"
+LAST_MODIFIED="10/17/2016"
+
+# Define color and theme for terminal
+black='\033[30m'
+red='\033[31m'
+green='\033[32m'
+yellow='\033[33m'
+blue='\033[34m'
+magenta='\033[35m'
+cyan='\033[36m'
+white='\033[37m'
+reset='\033[39m'
+bold='\033[1m'
+italic='\033[3m'
+underline='\033[4m'
+blinking='\x1b[5m'
+inverted='\x1b[7m' ## \x1b ~ \033 
+normal='\033[0m'
+
+USER_NAME=$(whoami)
+HOST_NAME=$(hostname)
+
+EXPERT='Nuruzzaman <nur@fnal.gov>'
+RUN_NUMBER=${1:-0}
+SUBRUN_NUMBER=${2:-1}
+
+TIMESTAMP="$(date +%y%m%d)"
+
+RAW_DATA_FILE="MV_000${RUN_NUMBER}_*${SUBRUN_NUMBER}_*_RawData.dat"
+DATA_FILE_SOURCE="/minerva/data/online_processing/swap_area"
+SSH_DESTINATION="ssh -f mnvonline@minervagpvm03.fnal.gov"
+DATA_FILE_DESTINATION="mnvonline@minervagpvm03.fnal.gov:/minerva/data/users/mnvonline/v97/"
+COPY_RAW_FILE="scp ${DATA_FILE_SOURCE}/${RAW_DATA_FILE} ${DATA_FILE_DESTINATION}"
+
+echo "Copying data file ${COPY_RAW_FILE}"
+
+###########################################
+
+#-----------------------------------------#
+# Copy Data files
+copy_file() {
+echo "Copying data file ${RAW_DATA_FILE}"
+echo "from ${DATA_FILE_SOURCE} to ${DATA_FILE_DESTINATION}"
+${COPY_RAW_FILE}
+echo "Copying data file is complete"
+}
+#-----------------------------------------#
+# Create DST
+create_dst() {
+ssh -f mnvonline@minervagpvm03.fnal.gov "sh -c 'echo Creating DSTs; source /minerva/app/home/mnvonline/.bashrc; source /etc/profile; source /minerva/app/home/mnvonline/setup_v10r8p8.sh; source /minerva/app/home/mnvonline/setup_v10r8p8.sh; cd /minerva/app/users/mnvonline/cmtuser/Minerva_v10r8p8/analysis; ./mnvrawcheckerUnderground.sh -r ${RUN_NUMBER} -s ${SUBRUN_NUMBER} &'"
+
+echo -e "Job submitted, please check the DST in few minutes at"
+echo -e "/minerva/data/users/mnvonline/data_processing/rawdigitchecker_v96/output/"
+}
+#-----------------------------------------#
+# Find last modified data files
+find_recent_rawdata_file() {
+echo -e "Most recently modified data files are:"
+#$FIND_MOST_RECENT_DATA_FILE
+ls -Art $DATA_FILE_SOURCE/MV_*.dat | tail -n 5
+}
+###########################################
+#              Help Function              #
+###########################################
+help_function() {
+clear
+echo -e "----------------------------------------------------------------------"
+echo -e "|                     MINERvA Test Stand Data Analysis                |"
+echo -e "----------------------------------------------------------------------"
+echo -e "${underline}What this script does?${normal}"
+echo -e "Will copy the raw data file to minervagpvm03 machine, and will submit a"
+echo -e "job to create DST."
+echo -e ""
+echo -e "${underline}How to use the script?${normal}"
+echo -e "${red}${bold}./$(basename $BASH_SOURCE) [run] [subrun]${normal}"
+echo -e ""
+echo -e "${underline}[option]${normal}\t${underline}Function${normal}"
+echo -e "[run]\t\tprovide run number e.g; 250"
+echo -e "[subrun]\tprovide subrun number e.g; 1"
+echo -e "\t\t"
+echo -e "help\t\tget this help message"
+echo -e ""
+echo -e "The output DSTs are saved at"
+echo -e "mnvonline@minervagpvm03:"
+echo -e "/minerva/data/users/mnvonline/data_processing/rawdigitchecker_v96/output"
+echo -e "----------------------------------------------------------------------"
+echo -e "Please contact ${underline}$EXPERT${normal} for more details."
+echo -e "----------------------------------------------------------------------"
+find_recent_rawdata_file
+}
+#-----------------------------------------#
+case "$1" in
+  "help" | "-help" | "--help" | "h" | "-h" | "usage" | "about" | "$nullVariable" )
+    help_function  # calling function help()
+    ;;
+  "${RUN_NUMBER}" )
+    copy_file
+    sleep 1
+    create_dst
+    ;;
+  *)
+esac
+###########################################
+
+
