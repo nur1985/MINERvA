@@ -1,0 +1,157 @@
+/**************************************************
+ * Systematics - Exercise 2                       *
+ * Template for creating systematic error bands   *
+ * using the CCInclusive ntuples                  *
+ **************************************************/
+
+// These include files will let us use the ROOT
+// utilities that we need
+#include "TTree.h"
+#include "TBranch.h"
+#include "TFile.h"
+#include "PlotUtils/MnvPlotter.h"
+#include "PlotUtils/MnvH1D.h"
+#include "TROOT.h"
+#include "TH1.h"
+#include "PlotUtils/MnvApplication.h"
+
+
+using namespace std;
+using namespace PlotUtils;
+
+// We will use these data and Monte Carlo ntuples for the activity
+//string filename_mc="/minerva/data3/users/minervapro/mc_ana_minerva1_Dec04_v10r6p13_ccinc_CCCohPion_CCPionInc/grid/central_value/minerva/ana/v10r6p13/00/01/02/00/SIM_minerva_00010200_Subruns_0001-0002-0003-0004_CCInclusiveReco_Ana_Tuple_v10r6p13.root";
+//string filename_mc="/minerva/data/users/evalen/Eroica/MC/grid/central_value/minerva/ana/v10r8p6/00/11/72/00/SIM_minerva_00117200_Subruns_0009-0010-0011-0012-0013_EMShower_Ana_Tuple_v10r8p6.root";
+string filename_mc="/minerva/data/users/Minerva101/rootfiles/simulation.root";
+//string filename_mc="/pnfs/minerva/persistent/users/minervapro/mc_production_ana_v10r8p8_minervame1A_runbase_00117200_PPFX_v1r7/grid/central_value/minerva/ana/v10r8p8/00/11/72/01/SIM_minerva_00117201_Subruns_0005-0025-0031-0032_CCInclusiveReco_Ana_Tuple_v10r8p8.root";
+
+//string filename_data="/minerva/data/users/minervapro/New_CCInclusiveReco_POTbugFixed/data_minerva1/grid/minerva/ana/numibeam/v10r6p13/00/00/20/00/MV_00002000_Subruns_0001-0002-0003-0004-0005_CCInclusiveReco_AnaData_Tuple_v10r6p13.root";
+//string filename_data="/minerva/data/users/evalen/Eroica_NewFlux/Data/me1A/grid/minerva/ana/numibeam/v10r8p8/00/00/60/39/MV_00006039_Subruns_0001-0002-0003-0004-0005_EMShower_AnaData_Tuple_v10r8p8-evalen.root";
+string filename_data="/minerva/data/users/Minerva101/rootfiles/data.root";
+//string filename_data="/pnfs/minerva/persistent/users/minervapro/data_processing_ana_v10r8p6_minervame1A/grid/minerva/ana/numibeam/v10r8p6/00/01/00/02/MV_00010002_Subruns_0011-0012-0013-0014-0015_CCInclusiveReco_AnaData_Tuple_v10r8p6.root";
+
+void Systematics_Solution2();
+
+void Systematics_Solution2();
+
+int main(int argc, char *argv[])
+{
+  PlotUtils::Initialize();
+  Systematics_Solution2();
+  return 0;
+}
+void Systematics_Solution2()
+{
+  cout<<"Enjoy MINERvA 101! This is systematics exercise 2"<<endl;
+
+  //Load the data and Monte Carlo files
+  TFile *infile_mc = new TFile(filename_mc.c_str(),"READ");
+  TFile *infile_data = new TFile(filename_data.c_str(),"READ");
+ 
+  // Your results will be stored in this output file
+  string output_filename="mySystematics.root";
+  TFile *out = new TFile(output_filename.c_str(),"RECREATE");
+    
+  // Load the CCInclusiveReco tree (ntuples) from the input root files
+  TTree *tree_mc, *tree_data;
+  infile_mc->GetObject("CCInclusiveReco",tree_mc);
+  infile_data->GetObject("CCInclusiveReco",tree_data);
+
+
+  // Our ntuple consists of many branches. As we are going to loop over the event and pick out the contents of some of them, We need to declare the ones we want to work with, using the TBranch data type.
+  TBranch *b_CCInclusiveReco_leptonE; // Muon energy/momentum
+  TBranch *b_wgt; // Monte Carlo central-value weight
+  TBranch *b_mc_wgt_Flux_Tertiary; // Tertiary production flux uncertainty
+  TBranch *b_mc_wgt_Flux_BeamFocus; // Flux beam focusing uncertainty
+  // #### Add NA49 branch here!
+  TBranch *b_CCInclusiveReco_sys_muon_energy_shift; // Shifted muon energies
+
+  // When we loop over the ntuple, we need to load the contents of the
+  // particular branches we are using into C++ variables. 
+  // First we declare those variables
+  double CCInclusiveReco_leptonE[4]; // Muon momentum and energy. Even though we are only using the [3] component for our plot, we have to match the data type to the ntuple branch, which is a vector of 4 numbers, [px,py,pz,E]
+  double wgt; // Monte Carlo events are assigned a central-value weight based upon how likely that is to occur. That's what this is. When we generate the vertical error bands, we will do that by using alternative weights, calculated with various parameters shifted
+  double mc_wgt_Flux_Tertiary[1000]; // The ntuple includes 1000 weights corresponding to 100 tertiary flux universes
+  double mc_wgt_Flux_BeamFocus[1000]; 
+  // #### Add a variable for the NA49 weights here
+  double CCInclusiveReco_sys_muon_energy_shift[2]; // We have a shift up and a shift down
+
+  // Now we need to link the branches to their respective TBranch variables, and the doubles into which we will load their contents
+  tree_mc->SetBranchAddress("CCInclusiveReco_leptonE", CCInclusiveReco_leptonE, &b_CCInclusiveReco_leptonE);
+  tree_mc->SetBranchAddress("wgt", &wgt, &b_wgt);
+  tree_mc->SetBranchAddress("mc_wgt_Flux_Tertiary", mc_wgt_Flux_Tertiary, &b_mc_wgt_Flux_Tertiary);
+  // ### Set up the NA49 branch here!
+  tree_mc->SetBranchAddress("mc_wgt_Flux_BeamFocus", mc_wgt_Flux_BeamFocus, &b_mc_wgt_Flux_BeamFocus);
+  tree_mc->SetBranchAddress("CCInclusiveReco_sys_muon_energy_shift", CCInclusiveReco_sys_muon_energy_shift, &b_CCInclusiveReco_sys_muon_energy_shift);
+
+  // We also need the unshifted muon energy for the data histogram
+  tree_data->SetBranchAddress("CCInclusiveReco_leptonE", CCInclusiveReco_leptonE, &b_CCInclusiveReco_leptonE);
+
+
+  // We are also declaring these branches and variables to load the number of protons on target (POT) for the data and monte carlo. We can normalize monte carlo to data by scaling it by the ratio of the total numbers of POT, allowing us to compare the distributions
+  TBranch *b_mc_pot;
+  TBranch *b_numi_pot;
+  double mc_pot;
+  double numi_pot;
+  tree_data->SetBranchAddress("numi_pot", &numi_pot, &b_numi_pot);
+  tree_mc->SetBranchAddress("mc_pot", &mc_pot, &b_mc_pot);
+
+  double total_mc_pot = 0;
+  double total_data_pot = 0;
+  
+ 
+  //Create MnvH1D objects to hold the data and Monte Carlo - MnvH1D is a special collection of histograms that can hold the central value and the shifted universe histograms
+  MnvH1D *h_Muon_Energy_mc = new MnvH1D("h_Muon_Energy_mc","Muon Energy (MC) ; Muon Energy (MeV); Events",30,0.0,15000);
+  MnvH1D *h_Muon_Energy_data = new MnvH1D("h_Muon_Energy_data","Muon Energy (data); Muon Energy (MeV); Events",30,0.0,15000);
+
+  //Now add the error bands.
+  const int nFluxUniverses = 100; // It's quicker to just look at the first 100 than do all 1000
+
+  // The flux uncertainties are vertical error bands, because they involve weights
+  h_Muon_Energy_mc->AddVertErrorBand( "Flux_Tertiary", nFluxUniverses );
+  // ##### Add vertical error bands here!
+
+  // ### Add the "MINOS Energy error" band here. How many universes 
+  //The MINOS energy error is a lateral error band because it involves changing the actual variable we are looking at. If we were using reconstruction cuts that also depended on the muon energy, we would need to change those cuts before calculating the universes of this error band
+   
+  // We loop over the Monte Carlo, loading the central value and shifted weights
+
+  // Get the number of entries in the Monte Carlo tree
+  long nentries_mc = tree_mc->GetEntries();
+  // Loop through them
+  for (long i = 0; i<nentries_mc; i++){
+    tree_mc->GetEntry(i); // load the values of the i'th entry's branches into the variables you set up earlier
+     // Add the POT from the Monte Carlo
+     total_mc_pot += mc_pot;
+     if( CCInclusiveReco_leptonE[3] == 0.0 ) continue; // Only use good data
+
+     // Fill the central value Monte Carlo histogram
+     h_Muon_Energy_mc->Fill(CCInclusiveReco_leptonE[3], wgt);
+     // Now fill the universe histograms with the shifted values
+     h_Muon_Energy_mc->FillVertErrorBand("Flux_Tertiary", CCInclusiveReco_leptonE[3], mc_wgt_Flux_Tertiary, wgt); 
+  }
+
+
+  // Finally, loop over the data ntuple to fill the data histogram 
+  long nentries_data = tree_data->GetEntries();
+  for (long i = 0; i<nentries_data; i++){
+    tree_data->GetEntry(i);
+    total_data_pot += numi_pot;
+    if( CCInclusiveReco_leptonE[3] == 0.0 ) continue;
+    h_Muon_Energy_data->Fill(CCInclusiveReco_leptonE[3]);
+  }
+
+  // Write the histograms to your output file and then close the file
+  out->Write();
+  out->Clear();
+  out->Close();
+
+  // Print out the POT numbers, make a note of these!
+  total_data_pot *= 1e12; // The stored values are a trillion times smaller than the real number of protons!
+  total_mc_pot *= 1e12;
+  cout<<"Data POT = "<< total_data_pot<<endl;
+  cout<<"MC POT = "<< total_mc_pot<<endl;
+  cout<<"Saving plots to "<<output_filename<<endl;
+  return;
+}
+ 
