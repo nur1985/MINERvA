@@ -1,0 +1,200 @@
+********************************************************************************
+* MINERVA SLOW CONTROL                                                         *
+* Author  : Cristian Gingu, gingu@fnal.gov, x6817                              *
+* Version : v:2.0.13. Release Date: July 27 2015                               *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.13. Release Date: July 27 2015                            *
+* 1. Introducing shortcut Action->ClearDescription  CTRL+D                     *
+* 2. In SC_MainObjects->WriteSendReceiveCROCE introducing:                     *
+*    if len(rcvHeaderErr)!=0:                                                  *
+*       print "FrameHeaderError from %s: %s"%(theDescription, rcvHeaderErr)    *
+*       raise Exception(rcvHeaderErr)                                          *
+*    such as to provide with more information when exception is thrown.        *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.12. Release Date: May 01 2015                             *
+* Upgrade for FEB v96 firmware capability -> independent Trip push option.     *
+* Upgrade CROCE_Channel firmware to v5 (file v5_1a_ch1234_ufw.mcs).            *
+* No upgrade necessary on CROCE_Control firmware.                              *
+* 1. The following acquisition modes are now available; set them using         *
+*    WR TripX ACQ Mode in FE->FPGA tab:                                        *
+*    b"00"= Minerva detector mode (v95, v96, TripTs ADC digization is done     *
+*      after each Open Gate.                                                   *
+*    b"01"= MTBF cosmic mode (v95, v96, TripTs ADC digization is done          *
+*      after an open gate ONLY if an External Trigger is sent to FEBs.         *
+*    b"10" = mode b"00" above, only now Trips push independently, new in v96.  *
+*    b"11" = mode b"01" above, only now Trips push independently, new in v96.  *
+* 2. FE->FPGA frame: add 4 new registers, 8-bits, read-only. Thus the total    *
+*    number of regs is increased in v96 from 55 to 59.                         *
+*    R Trip20HitCnt (16-bits) = reg#56 & reg#55 =                              *
+*      = ACQ_MODE(1) & NHitsTrip4(4..3) & NHitsTrip2(4..0) &                   *
+*                      NHitsTrip4(2..0) & NHitsTrip0(4..0)                     *
+*    R Trip31HitCnt (16-bits) = reg#58 & reg#57 =                              *
+*      = ACQ_MODE(1) & NHitsTrip5(4..3) & NHitsTrip3(4..0) &                   *
+*                      NHitsTrip5(2..0) & NHitsTrip1(4..0)                     *
+*    Note that NHitsTripX is a 5-bit number, to accomodate up to 23 hits/Trip  *
+*    Also, both NHitsTrip4 and NHitsTrip5 are currently zero, since these Trips*
+*    are pushing ONLY after the gate closes - zero pushes inside the gate.     *
+*    Also, the WR Spare 8b is still at the end of frame, which is now reg#59.  *
+* 3. Discriminator frame. Up to v95 the NHitsTripX was encoded using two bytes *
+*    at the top of the discriminator frame, data part, second and third byte:  *
+*    NHitsTripX = "000" & NHitsTrip32 & "000" & NHitsTrip10 where              *
+*      NHitsTrip32 = NHitsTrip3 = NHitsTrip2 since they push together, and     *
+*      NHitsTrip10 = NHitsTrip1 = NHitsTrip0 since they push together.         *
+*    With v96, Trips can push independently. A new 16 bit word was introduced  *
+*    labeled NHitsTripX2, following the above NHitsTripX. These two extra bytes*
+*    are present ONLY if ACQ_MODE(1)="1" i.e. independent push mode is selected*
+*    In any cases, NHitsTripX and NHitsTripX2 encoding is as follows:          *
+*    NHitsTripX  = R Trip20HitCnt (16-bits) = reg#56 & reg#55 =                *
+*      = ACQ_MODE(1) & NHitsTrip4(4..3) & NHitsTrip2(4..0) &                   *
+*                      NHitsTrip4(2..0) & NHitsTrip0(4..0)                     *
+*    NHitsTripX2 = R Trip31HitCnt (16-bits) = reg#58 & reg#57 =                *
+*      = ACQ_MODE(1) & NHitsTrip5(4..3) & NHitsTrip3(4..0) &                   *
+*                      NHitsTrip5(2..0) & NHitsTrip1(4..0)                     *
+*    It can be seen that for NHitsTrip4=NHitsTrip5="00000" the NHitsTripX has  *
+*    the same encoding as in v95, where ACQ_MODE(1) bit was not used (0).      *
+*    If NHitsTripX has the MSB set due to ACQ_MODE(1)="1",then Slow Control and*
+*    other DAC software will have a hint that the next two bytes (NHitsTripX2) *
+*    MUST be parsed as Hits Counters too, and then the frame can be decoded as *
+*    usual. The same info is used by the CROCE_Channel firmware in sequencer   *
+*    mode; v5 firmware changes are transparent to users, no need to change any *
+*    related application software.                                             *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.11. Release Date: February 12 2015                        *
+* 1. Updating procedure OnVMEbtnRunBoardTest, #TEST#9 Test Sequencer such as to*
+*    check the Minerva Frame Header bytes.                                     *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.10. Release Date: December 18 2014                        *
+* 1. Removing the call OnMenuLoadHardware() at application startup. Thus the   *
+*    left pane is empty, no CRIM, CROCE or other modules will show up.         *
+* 2. Introducing File->ConfigREFE        CTRL+F                                *
+* 3. Introducing File->UpdateHierToFile  CTRL+U                                *
+* 4. Introducing File->GetHierFromFile   CTRL+G                                *
+* 5. The File->FindHardware still calls ConfigCROCEsREFE, with interface modif *
+*    to include ntry1 for a fixed default of 1000. The new File->ConfigREFE is *
+*    introduced to keep things independent; here the ntry1 is user defined.    *
+*    It is suggested to run the later one time, with very large statistic (at  *
+*    least 5000 meas) for a given hardware setup (i.e. loop cable length) and  *
+*    then save this info, together with all devices settings, into the .hwcfg. *
+*    The Status bar indicates the progress.                                    *
+* 6. The new File->UpdateHierToFile and File->GetHierFromFile use a *.hier file*
+*    which is quite similar with *.hwcfg except no parameter values are written*
+*    into modules, either CRIM, CROC, CROCE, FPGA or Trip. It is meant mostly  *
+*    for fixed system setups like the one underground. The advantage of File-> *
+*    GetHierFromFile is the Slow Control is "loaded" with a given hierarchy    *
+*    (in the left pane) without an effective hardware scan.                    *
+* 7. Introducing two LoopDelaysStatistic buttons in CROCE tab:                 *
+*    7.1. "Report Delays this CROCE": It does a statistic of Loop Delay        *
+*    measurements on all 4 ChannelEs over NMeas times. The average values are  *
+*    displayed in the LoopDelays text boxes above the button, for each channel,*
+*    and also in the Description tab where, for convenience, the ConfigREFE  is*
+*    also reported. The Status bar indicates the progress. The units are 6*53= *
+*    318MHz clock cycles (~3.14ns). For CAT5E cable I measured ~1.5ns/ft.      *
+*    7.2. "Report Delays All CROCEs": It does a statistic of Loop Delay        *
+*    measurements on all CROCEs in the system over NMeas times. The average    *
+*    values are displayed, for each channel and each CROCE,in the Description  *
+*    tab where, for convenience, the ConfigREFE is also reported. The Status   *
+*    bar indicates  the progress.                                              *
+* 8. Add button SendFastCmdAll in CROC tab and CROCE tab. For example use the  *
+*    ResetFPGA FastCmd to reset all FEBs in the system after power up.         *
+* 9. After a power up it is also required to send a File->SysyemReset to reset *
+*    all CROCE and CRIM modules.                                               *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.9. Release Date: December 3 2014                          *
+* 1. Update CAENVMEwrapper.py with the following:                              *
+*    1.1. CAENVMETypes.cvErrorsDict with -5:cvTimeoutError                     *
+*    1.2. CAENVMETypes.cvTimeoutDict = {0:"50us", 1:"400us"}                   *
+*    1.3. Add class CAENVMETypes.CVVMETimeouts                                 *
+*    1.4. Add function Controller.GetTimeout()                                 *
+*    1.5. Add function Controller.SetTimeout(timeouttype)                      *
+* 2. Introducing time.sleep(0.002) in CROCE and CROCEChannelE FlashRead methods*
+*    in an attempt to correct errors seen at Minerva Test Beam Facility setup. *
+* 3. Introducing multiple "ClearStatusOptions" buttons in CHE tab.             *
+* 4. Introducing the following Menu Shortcuts:                                 *
+*    4.1.Find Hardware          CTRL+W                                         *
+*    4.2.Load from File         CTRL+L                                         *
+*    4.3.Save to File           CTRL+S                                         *
+*    4.4.System Reset           CTRL+R                                         *
+*    4.5.Quit                   CTRL+Q                                         *
+*    4.6.Expand All             CTRL+E                                         *
+*    4.7.Collapse All           CTRL+O                                         *
+*    4.8.Read All HVs           CTRL+M                                         *
+*    4.9.Set All HVs            CTRL+N                                         *
+*    4.10.START Monitor All HVs CTRL+H                                         *
+*    4.11.STOP Monitor All HVs  CTRL+K                                         *
+*    4.12.About                 CTRL+A                                         *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.8. Release Date: October 28 2014                          *
+* 1. Update GUI for CRIM->TimingModule tab: (i) add Sequencer Register RESET   *
+*    button (write0x0202 to address 0xC070) and (ii) add MTM Timing Violations *
+*    Register at address 0xC090 with Clear (write0x1001) and Read buttons.     *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.7. Release Date: August 05 2014                           *
+* 1. Cosmetic chage in VME->CROCE Board Test tab: adding Ch0,1,2,3 check boxes *
+*    (default checked) to select channel(s) on which to perform the tests.     *
+* 2. Control FPGA firmware is revised (using Diamond software)                 *
+* 3. Introducing online FLASH programming for Control FPGA.                    *
+*    New Control FPGA componets are:                                           *
+*    (i)  RW Register "FLASH Control" @ 0x0FF070 and                           *
+*    (ii) RW FLASH Memory (as in Channel FPGA), 2048KBytes, starting @ 0x0FF800*
+* 4. Current firmware files are:                                               *
+*    channel: v3_1b_ch1234_ufw.mcs (same, v3)                                  *
+*    control: cvme_05c_3.bit       (updated, v3)                               *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.6. Release Date: January 21st 2014                        *
+* 1. Introducing the QUERY_FPGA command that should be instrumental in online  *
+*    debug when chain communication is lost.                                   *
+* 2. All FEBs send a "PREVIEWDATA" frame (5 bytes) when an ecoded QUERY_FPGA   *
+*    command is sent by the CROCE (simultaneously on all 4 Channels):          *
+*    byte1 == "1000" & FEB_ID;                                                 *
+*    byte2 == TRIP_10_HITCNT;                                                  *
+*    byte3 == TRIP_32_HITCNT;                                                  *
+*    byte4 == HV_READDATA low byte;                                            *
+*    byte5 == HV_READDATA high byte;                                           *
+* 3. The above frame from each FEB in the chain is stored in the CRCE_CHANNEL  *
+*    Receive Memory (see SlowControl GUI tab CHE->Memories) right after the ten*
+*    bytes of a dummy (previous) MFH. Also, the values in tab CHE->Registers   *
+*    will be updated and can be readout. For example RcvMemWPointer=15 and the *
+*    RcvMemFrmConterif=3 if there are 3 FEBs in the chain.                     *
+* 4. The PREVIEW DATA encoded frame is constrained by this logic condition:    *
+*    a. FCMD_QUERY||(EN_PREVIEW_DATA&&TRIPX_ADC_DONE_RE) on FEB v95 and next.  *
+*    b. FCMD_QUERY&&(EN_PREVIEW_DATA&&TRIPX_ADC_DONE_RE) on FEB v91 and prev.  *
+*    (see also tab FE->DAQ->DataType->23Hits for compatibility between discrim *
+*    encoding differences on v95 and v91)                                      *
+* 5. Current firmware files are:                                               *
+*    channel: v3_1b_ch1234_ufw.mcs (updated)                                   *
+*    control: croce_vme_v9a.bit    (same)                                      *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.5. Release Date: December 12th 2013                       *
+* 1. Introducing two CRC bytes at the end of each received frame.              *
+*    The frame length in MFH includes 10 bytes header plus the twoCRC bytes.   *
+* 2. Introducing online FLASH programming for Channels.                        *
+* 3. Current (updated) firmware files are:                                     *
+*    channel: v3_1a_ch1234_ufw.mcs                                             *
+*    control: croce_vme_v9a.bit                                                *
+* 4. Compatible with previous firmware files:                                  *
+*    channel: v2_3e2_ch1234_ufw.mcs                                            *
+*    control: croce_vme_v8n.bit                                                *
+* 5. Compatible with FEB firmware files:                                       *
+*    v91 : currently used                                                      *
+*    v95 : updated version with 23 Hits capability: v95_23anahits.spidata      *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.4. Release Date: August 23rd 2013                         *
+* 1. New Menu option File-> Find Hardware ChRST.                               *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.3. Release Date: August 14th 2013                         *
+* 1. Removed fcmd=ResetFPGA in ConfigCROCEsREFE() because an FPGA reset sets   *
+* GateStart and GateLength regs to defaul values - which is user unconvenient. *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.2. Release Date: August 6th 2013                          *
+* Upgraded CROCE firmwares: croce_vme_v8n.bit and v2_3e2_ch1234_ufw.mcs        *
+* New menu items under "Actions":                                              *
+* 1. "Save Current Description" will save the current text into file.          *
+* 2. "Write Description to File" will start saving new text into a file or stop*
+*     saving if "Cancel" is selected in the pop up window.                     *
+* 3. "Change Font Size" changes "Description" font size.                       *
+* 4. "About" will print this "About" information.                              *
+*------------------------------------------------------------------------------*
+* NOTES: Version 2.0.1.                                                        *
+* Major version upgrade (2.0.x) for two VME crates and CROCEs modules.         *
+********************************************************************************
+
